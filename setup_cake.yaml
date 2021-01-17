@@ -1,0 +1,114 @@
+- hosts: cake_nodes
+  become: yes
+  vars:
+    CAKE_DEST_DIR: /var/www/cakephp/
+    EPEL_RPM_URL: https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+    PHP_REPO_URL: https://rpms.remirepo.net/enterprise/remi-release-7.rpm
+  tasks:
+    - name: Install the latest version of Apache
+      yum:
+        name: httpd
+        state: latest
+    - name: Enable php74 and epel repositories
+      shell: amazon-linux-extras enable php7.4 epel
+    - name: 'Provide custom repo for mariadb'
+      copy:
+        src: files/MariaDB.repo
+        dest: /etc/yum.repos.d/MariaDB.repo
+    - name: 'Install MariaDB Database Server'
+      yum:
+        name: '{{ MARIADB_PACKAGES }}'
+        state: present
+      vars:
+        MARIADB_PACKAGES:
+          - MariaDB-server
+          - MariaDB-client
+    - name: 'Start service mariaDB if not started yet'
+      service:
+        name: mariadb
+        state: started
+    - name: 'Install pymsql'
+      yum:
+        name: python2-PyMySQL
+        state: present
+    - name: 'Create DB'
+      tags: ['db']
+      mysql_db:
+        login_unix_socket: '/var/lib/mysql/mysql.sock'
+        name: 'cake_db'
+        state: present
+    - name: 'Create db user'
+      mysql_user:
+        login_unix_socket: '/var/lib/mysql/mysql.sock'
+        name: 'cake_db_user'
+        password: 'password'
+        priv: 'cake_db.*:ALL'
+        state: present
+    - name: 'Install php repo'
+      yum:
+        name: '{{ PHP_REPO_URL }}'
+        state: present
+    - name: 'Get amazon extras repo'
+      yum:
+        name: amazon-linux-extras
+        state: latest
+      register: yum_output
+    - name: 'Delete php 5.4'
+      yum:
+        name: php
+        state: absent
+    - name: 'Install php 7.4'
+      yum:
+        name:
+          - epel-release
+          - php
+          - php-common
+          - php-fpm
+          - php-gd
+          - php-intl
+          - php-json
+          - php-mbstring
+          - php-mysqlnd
+          - php-xml
+        update_cache: yes
+    - name: 'install cake-php speficic dependencies'
+      yum:
+        name:
+          - 'php-phpunit-PHPUnit'
+          - 'php-pdo'
+          - 'php-pdo_mysql'
+        skip_broken: yes
+    - name: 'Set up cakephp project directory'
+      file:
+        path: /var/www/cakephp
+        state: directory
+        mode: '0755'
+    - name: 'Download and install Composer'
+      shell: curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+    - name: 'Change permissions on project dir'
+      shell: cd /var/www/cakephp && sudo chown -Rv root:$USER . && sudo chmod -Rv g+rw .
+    - name: 'Create cake php project via composer'
+      composer:
+        command: require
+        working_dir: /var/www/cakephp
+        arguments: cakephp/app
+    - name: 'Copy cake php conf file'
+      template:
+        src: 'files/app_local.php'
+        dest: '/var/www/cakephp/app/config/'
+    - name: 'Copy cake php template file'
+      template:
+        src: 'files/home.php'
+        dest: '/var/www/cakephp/app/templates/Pages/'
+    - name: 'Set debug=false'
+      template:
+        src: 'files/app.php'
+        dest: '/var/www/cakephp/app/config/'
+    - name: 'Copy hhtpd vhost'
+      template:
+        src: 'files/cake-vhost.conf'
+        dest: '/etc/httpd/conf.d/cake.conf'
+    - name: 'Start httpd service'
+      service:
+        name: httpd
+        state: started
