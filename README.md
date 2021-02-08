@@ -1,1 +1,1 @@
-# Automatyzacja instalacji aplikacji 
+# Maksymilian Świerczyński - Automatyzacja instalacji aplikacji - ADSK
